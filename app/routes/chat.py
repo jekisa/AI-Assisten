@@ -30,3 +30,4 @@ async def chat_with_assistant(request: ChatRequest) -> ChatResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Terjadi kesalahan saat memproses pertanyaan: {str(e)}"
         )
+

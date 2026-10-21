@@ -1,12 +1,14 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, status
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.schemas import HealthResponse
 from app.routes.chat import router as chat_router
 from app.routes.documents import router as documents_router
 from app.services.vector_db import vector_db_service
+from app.templates.chat_ui import CHAT_UI_HTML
 
 # Setup logging
 logging.basicConfig(
@@ -85,10 +87,27 @@ async def health_check():
     )
 
 
+@app.get(
+    "/chat",
+    response_class=HTMLResponse,
+    tags=["UI"],
+    summary="Web Chatbot UI Interaktif"
+)
+@app.get(
+    "/ui",
+    response_class=HTMLResponse,
+    include_in_schema=False
+)
+async def chat_ui():
+    """Menampilkan antarmuka web interaktif untuk mencoba chatbot Dea Trans Group."""
+    return HTMLResponse(content=CHAT_UI_HTML)
+
+
 @app.get("/", tags=["System"], summary="Root API Information")
 async def root():
     return {
         "message": f"Selamat datang di {settings.APP_NAME}",
+        "web_chat_ui": "/chat",
         "documentation": "/docs",
         "health": "/api/v1/health",
         "official_website": "https://deatransgroup.com/"

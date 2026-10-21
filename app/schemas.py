@@ -48,3 +48,4 @@ class HealthResponse(BaseModel):
     version: str
     vector_db_connected: bool
     total_documents: int
+

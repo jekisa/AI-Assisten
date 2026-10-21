@@ -24,6 +24,15 @@ def test_root_endpoint():
     data = response.json()
     assert "Dea Trans Group" in data["message"]
     assert data["documentation"] == "/docs"
+    assert data["web_chat_ui"] == "/chat"
+
+
+def test_chat_ui_endpoint():
+    """Uji halaman UI interaktif."""
+    response = client.get("/chat")
+    assert response.status_code == 200
+    assert "Dea Trans Group" in response.text
+    assert "messagesArea" in response.text
 
 
 def test_kondisi_1_direct_answer_greeting():

@@ -42,3 +42,4 @@ async def get_document_count():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Gagal menghitung dokumen: {str(e)}"
         )
+

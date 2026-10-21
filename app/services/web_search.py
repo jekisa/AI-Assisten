@@ -116,3 +116,4 @@ class WebSearchService:
 
 # Singleton instance
 web_search_service = WebSearchService()
+
