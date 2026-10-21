@@ -65,3 +65,4 @@ class PromptAugmenter:
 
 # Singleton instance
 prompt_augmenter = PromptAugmenter()
+

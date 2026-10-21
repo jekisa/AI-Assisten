@@ -140,3 +140,4 @@ class TextChunker:
 
 # Singleton instance
 text_chunker = TextChunker()
+
