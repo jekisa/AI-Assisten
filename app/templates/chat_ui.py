@@ -112,7 +112,13 @@ CHAT_UI_HTML = """<!DOCTYPE html>
       box-shadow: 0 0 8px #10b981;
     }
 
-    .header-right a {
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-right a, .header-right button {
       color: #ffffff;
       background: rgba(255, 255, 255, 0.15);
       padding: 6px 12px;
@@ -120,11 +126,26 @@ CHAT_UI_HTML = """<!DOCTYPE html>
       font-size: 12px;
       text-decoration: none;
       font-weight: 500;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
       transition: all 0.2s;
     }
 
-    .header-right a:hover {
+    .header-right a:hover, .header-right button:hover {
       background: rgba(255, 255, 255, 0.25);
+    }
+
+    .btn-add-knowledge {
+      background: #10b981 !important;
+      font-weight: 600 !important;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .btn-add-knowledge:hover {
+      background: #059669 !important;
     }
 
     /* Quick Test Chips */
@@ -413,6 +434,140 @@ CHAT_UI_HTML = """<!DOCTYPE html>
       transform: none;
       box-shadow: none;
     }
+    /* Modal Dialog */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(4px);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 999;
+      padding: 16px;
+    }
+
+    .modal-box {
+      background: #ffffff;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 540px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25);
+      overflow: hidden;
+      animation: modalFade 0.25s ease-out;
+    }
+
+    @keyframes modalFade {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .modal-header {
+      background: linear-gradient(135deg, #1e3a8a, #1e40af);
+      color: #ffffff;
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: #cbd5e1;
+      font-size: 20px;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .modal-close:hover {
+      color: #ffffff;
+    }
+
+    .modal-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+    }
+
+    .form-input, .form-textarea {
+      padding: 10px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-family: inherit;
+      outline: none;
+    }
+
+    .form-input:focus, .form-textarea:focus {
+      border-color: var(--primary-light);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+
+    .form-textarea {
+      resize: vertical;
+      min-height: 110px;
+      line-height: 1.5;
+    }
+
+    .modal-footer {
+      padding: 14px 20px;
+      background: #f8fafc;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .btn-secondary {
+      background: #e2e8f0;
+      color: #334155;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .btn-primary {
+      background: #10b981;
+      color: #ffffff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .btn-primary:hover {
+      background: #059669;
+    }
   </style>
 </head>
 <body>
@@ -431,6 +586,7 @@ CHAT_UI_HTML = """<!DOCTYPE html>
         </div>
       </div>
       <div class="header-right">
+        <button class="btn-add-knowledge" onclick="openKnowledgeModal()">➕ Tambah Pengetahuan</button>
         <a href="/docs" target="_blank">📖 Swagger Docs</a>
         <a href="https://deatransgroup.com/" target="_blank">🌐 Website Resmi</a>
       </div>
@@ -500,10 +656,100 @@ CHAT_UI_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- Modal Tambah Pengetahuan -->
+  <div class="modal-overlay" id="knowledgeModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>📚 Tambah Dokumen Pengetahuan (ChromaDB)</h3>
+        <button class="modal-close" onclick="closeKnowledgeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Judul Topik / FAQ:</label>
+          <input type="text" id="docTitle" class="form-input" placeholder="Contoh: Tarif Sewa HiAce Premio Drop Bandara" />
+        </div>
+        <div class="form-group">
+          <label>Kategori:</label>
+          <input type="text" id="docCategory" class="form-input" placeholder="Contoh: Sewa & Carter Armada" value="Layanan & Kebijakan" />
+        </div>
+        <div class="form-group">
+          <label>Isi Materi / SOP / Informasi Lengkap:</label>
+          <textarea id="docContent" class="form-textarea" placeholder="Tuliskan detail kebijakan, harga, syarat ketentuan, atau prosedur..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Sumber Rujukan / Link:</label>
+          <input type="text" id="docSource" class="form-input" value="https://deatransgroup.com/" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeKnowledgeModal()">Batal</button>
+        <button class="btn-primary" id="btnSaveDoc" onclick="saveKnowledgeDoc()">💾 Simpan ke Vector DB</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const messagesArea = document.getElementById('messagesArea');
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
+    const knowledgeModal = document.getElementById('knowledgeModal');
+
+    function openKnowledgeModal() {
+      knowledgeModal.style.display = 'flex';
+      document.getElementById('docTitle').focus();
+    }
+
+    function closeKnowledgeModal() {
+      knowledgeModal.style.display = 'none';
+    }
+
+    async function saveKnowledgeDoc() {
+      const title = document.getElementById('docTitle').value.trim();
+      const category = document.getElementById('docCategory').value.trim();
+      const content = document.getElementById('docContent').value.trim();
+      const source = document.getElementById('docSource').value.trim() || 'https://deatransgroup.com/';
+      const btnSave = document.getElementById('btnSaveDoc');
+
+      if (!title || !content) {
+        alert('Mohon isi Judul Topik dan Isi Materi pengetahuan!');
+        return;
+      }
+
+      btnSave.disabled = true;
+      btnSave.innerText = 'Menyimpan...';
+
+      try {
+        const response = await fetch('/api/v1/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            documents: [{ title, category, content, source }]
+          })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          alert('✅ Sukses! ' + data.message + ' Pengetahuan baru langsung aktif di ChromaDB.');
+          closeKnowledgeModal();
+          // Reset form
+          document.getElementById('docTitle').value = '';
+          document.getElementById('docContent').value = '';
+          // Kirim pesan notifikasi sistem ke chat
+          appendBotResponse({
+            answer: `Dokumen baru bertopik **"${title}"** telah berhasil ditambahkan ke database ChromaDB! Kakak sekarang bisa langsung menanyakan hal tersebut kepada saya. 😊`,
+            route_taken: 'vector_retrieval',
+            sources: [{ title: title, category: category, source: source, snippet: content.substring(0, 150) + '...' }]
+          });
+        } else {
+          alert('Gagal menyimpan: ' + (data.detail || 'Terjadi kesalahan'));
+        }
+      } catch (err) {
+        alert('Gagal terhubung ke server: ' + err.message);
+      } finally {
+        btnSave.disabled = false;
+        btnSave.innerText = '💾 Simpan ke Vector DB';
+      }
+    }
 
     function scrollToBottom() {
       messagesArea.scrollTop = messagesArea.scrollHeight;
@@ -658,3 +904,4 @@ CHAT_UI_HTML = """<!DOCTYPE html>
 </body>
 </html>
 """
+
