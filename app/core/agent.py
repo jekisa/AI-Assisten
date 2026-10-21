@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any, List
 from app.core.router import router, IntentType
 from app.core.llm import llm_client
+from app.core.prompt_augmenter import prompt_augmenter
 from app.services.vector_db import vector_db_service
 from app.services.web_search import web_search_service
 from app.schemas import ChatResponse, SourceItem
@@ -149,30 +150,16 @@ class DeaTransAgent:
         return self.llm.generate_chat_completion(messages, temperature=0.6)
 
     def _generate_answer_from_context(self, question: str, docs: List[Dict[str, Any]], source_type: str = "vector") -> str:
-        """Kondisi 2: Menghasilkan jawaban berdasarkan dokumen ChromaDB."""
-        context_parts = []
-        for i, d in enumerate(docs, 1):
-            title = d.get("title", "")
-            content = d.get("content", "")
-            context_parts.append(f"--- DOKUMEN {i}: {title} ---\n{content}")
-
-        context_str = "\n\n".join(context_parts)
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"{SYSTEM_PROMPT_CUSTOMER_SERVICE}\n\n"
-                    f"KONTEKS INFORMASI DARI DATABASE INTERNAL DEA TRANS:\n{context_str}\n\n"
-                    "Instruksi: Jawablah pertanyaan pelanggan secara komprehensif, akurat, dan terstruktur sesuai konteks di atas. "
-                    "Jika pertanyaan menyinggung kebijakan pengembalian barang, sebutkan batas waktu pelaporan (1x24 jam), masa simpan (30 hari), "
-                    "dan syarat bukti booking. Jika menyinggung komisi afiliasi, sebutkan komisi per seat (Rp 15.000 - Rp 25.000 atau 10%-15%), "
-                    "jadwal pencairan mingguan (hari Senin), dan link https://deatransgroup.com/."
-                )
-            },
-            {"role": "user", "content": question}
-        ]
-        return self.llm.generate_chat_completion(messages, temperature=0.2)
+        """
+        Kondisi 2: RAG Pipeline - Prompt Augmentation & Generation.
+        Menggabungkan chunks hasil retrieval ke dalam wadah prompt berstruktur,
+        lalu mengirimkan ke LLM untuk menghasilkan jawaban yang grounded.
+        """
+        augmented_messages = prompt_augmenter.build_augmented_messages(
+            user_query=question,
+            retrieved_chunks=docs
+        )
+        return self.llm.generate_chat_completion(augmented_messages, temperature=0.2)
 
     def _generate_answer_from_web(self, question: str, web_results: List[Dict[str, Any]]) -> str:
         """Kondisi 3: Menghasilkan jawaban berdasarkan hasil Web Search (Tavily)."""

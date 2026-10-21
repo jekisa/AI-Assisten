@@ -33,10 +33,14 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIRECTORY: str = "./chroma_db"
     CHROMA_COLLECTION_NAME: str = "deatrans_knowledge"
     
+    # RAG Pipeline Configuration (Chunking, Embedding & Vector Retrieval)
+    CHUNK_SIZE: int = 450         # Ukuran maksimal karakter per chunk teks
+    CHUNK_OVERLAP: int = 90       # Irisan karakter antarpotongan untuk menjaga kesinambungan makna
+    RETRIEVAL_TOP_K: int = 3      # Jumlah chunks paling relevan yang diambil (Top-K)
+
     # Ambang batas jarak (distance). Jika distance terdekat > threshold,
     # dokumen dianggap tidak memadai (tidak relevan), sehingga beralih ke Fallback Web Search.
-    RETRIEVAL_DISTANCE_THRESHOLD: float = 1.38
-    RETRIEVAL_TOP_K: int = 3
+    RETRIEVAL_DISTANCE_THRESHOLD: float = 1.40
 
 
 settings = Settings()

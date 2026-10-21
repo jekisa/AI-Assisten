@@ -36,10 +36,29 @@ Saat ada pertanyaan masuk, LLM bertindak sebagai **Router** untuk menganalisis d
 ### 2. Kondisi 1: Direct Answer
 Jika pengguna hanya menyapa (misal: *"Halo min apa kabar?"*, *"Selamat pagi"*), LLM **langsung menjawab ramah tanpa memicu pencarian database lokal maupun web search**, sehingga **sangat menghemat token dan waktu respons (sub-second latency)**.
 
-### 3. Kondisi 2: Vector Retrieval (ChromaDB)
-Jika pengguna bertanya tentang kebijakan pengembalian barang tertinggal, klaim paket rusak/hilang, maupun komisi afiliasi agen tiket travel, agen secara otomatis memicu tool pencarian konteks di dalam **Vector Database (ChromaDB)**.
-- Koleksi: `deatrans_knowledge`
-- Menyimpan SOP pengembalian barang (pelaporan 1x24 jam, masa simpan 30 hari di pool operasional), skema komisi agen travel (Rp 15.000 - Rp 25.000 / seat, pencairan mingguan tiap Senin), dan layanan travel door-to-door / carter drop.
+### 3. Kondisi 2: Vector Retrieval & RAG Pipeline (ChromaDB)
+Jika pengguna bertanya tentang kebijakan pengembalian barang tertinggal, klaim paket rusak/hilang, maupun komisi afiliasi agen tiket travel, agen secara otomatis memicu alur **Retrieval-Augmented Generation (RAG)** 4 tahap:
+
+```mermaid
+flowchart LR
+    Doc[Dokumen Sumber Panjang] --> Chunk[1. Chunking & Overlap<br/>Sliding window + boundary]
+    Chunk --> Embed[2. Embedding Vektorisasi<br/>Model Semantik]
+    Embed --> Store[(ChromaDB Vector Store)]
+    
+    Query[Pertanyaan User] --> QEmbed[Vektorisasi Query]
+    QEmbed --> Retrieve[3. Vector Retrieval<br/>Cosine Similarity Top-K]
+    Store -.-> Retrieve
+    
+    Retrieve --> Augment[4. Prompt Augmentation<br/>Pengayaan Konteks + User Query]
+    Query -.-> Augment
+    Augment --> LLM([Large Language Model])
+    LLM --> Answer([Jawaban Akhir Terstruktur])
+```
+
+- **Tahap 1: Chunking (Pemotongan Teks)**: Dokumen panjang dipotong menjadi unit-unit teks lebih kecil (`CHUNK_SIZE = 450`) dengan teknik **chunk overlap** (`CHUNK_OVERLAP = 90`) agar batas antarkalimat dan konteks makna tidak terputus.
+- **Tahap 2: Embedding (Vektorisasi Semantik)**: Setiap potongan chunk diubah menjadi representasi vektor numerik padat (*dense vector*) berdimensi tinggi yang merepresentasikan makna semantiknya, kemudian disimpan di ChromaDB.
+- **Tahap 3: Vector Retrieval (Pencarian Vektor Top-K)**: Pertanyaan pengguna diubah menjadi vektor, lalu sistem menghitung jarak kemiripan (*Cosine Similarity*) untuk mengambil $K$ potongan teks paling relevan (`RETRIEVAL_TOP_K = 3`).
+- **Tahap 4: Prompt Augmentation (Pengayaan Prompt)**: Potongan teks Top-K digabungkan dengan metadata (judul, kategori, nomor potongan) dan pertanyaan asli pengguna ke dalam wadah prompt berstruktur ketat dengan persona Customer Care Dea Trans, lalu dikirimkan ke LLM untuk dirangkum menjadi jawaban akhir yang akurat (*grounded*).
 
 ### 4. Kondisi 3: Fallback (Tavily Web Search)
 Jika dokumen di database lokal tidak memadai (skor jarak melebihi batas ambang `RETRIEVAL_DISTANCE_THRESHOLD`), agen **secara mandiri memutuskan** untuk menggunakan tool **Web Search (Tavily API)** untuk mencari informasi terbaru di internet terkait Dea Trans Group atau kondisi lalu lintas perjalanan.

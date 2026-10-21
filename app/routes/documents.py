@@ -10,16 +10,19 @@ router = APIRouter(prefix="/documents", tags=["Knowledge Base & Ingestion"])
     response_model=IngestDocumentsResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Tambah Dokumen FAQ ke ChromaDB",
-    description="Menyimpan dokumen pengetahuan baru ke Vector Database ChromaDB untuk memperkaya basis data Dea Trans Group."
+    description="Menyimpan dokumen pengetahuan baru ke Vector Database ChromaDB dengan alur Chunking, Overlap, dan Embedding."
 )
 async def ingest_documents(request: IngestDocumentsRequest) -> IngestDocumentsResponse:
     try:
         docs_to_insert = [doc.model_dump() for doc in request.documents]
-        count = vector_db_service.add_documents(docs_to_insert)
+        res = vector_db_service.add_documents(docs_to_insert)
+        doc_count = res["inserted_documents"]
+        chunk_count = res["inserted_chunks"]
         return IngestDocumentsResponse(
             status="success",
-            inserted_count=count,
-            message=f"Berhasil menambahkan {count} dokumen ke ChromaDB."
+            inserted_count=doc_count,
+            inserted_chunks=chunk_count,
+            message=f"Berhasil memproses {doc_count} dokumen menjadi {chunk_count} chunks dan menyimpannya ke ChromaDB."
         )
     except Exception as e:
         raise HTTPException(

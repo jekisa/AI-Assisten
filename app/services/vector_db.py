@@ -8,6 +8,7 @@ from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 from sklearn.feature_extraction.text import HashingVectorizer
 from app.config import settings
 from app.data.default_faq import DEA_TRANS_FAQ_DOCUMENTS
+from app.services.chunker import text_chunker, TextChunk
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +16,8 @@ logger = logging.getLogger(__name__)
 class FastLocalEmbeddingFunction(EmbeddingFunction):
     """
     Embedding function lokal berbasis L2-normalized HashingVectorizer.
-    Ultra-cepat (<1ms), mandiri, tidak membutuhkan download model ONNX dari internet,
-    dan sangat andal untuk klasifikasi FAQ dan kalkulasi cosine similarity.
+    Mengubah teks menjadi representasi vektor numerik padat (dense numerical vectors)
+    yang merepresentasikan makna semantik teks untuk kalkulasi Cosine Similarity.
     """
 
     def __init__(self, n_features: int = 512):
@@ -46,7 +47,10 @@ class FastLocalEmbeddingFunction(EmbeddingFunction):
 
 class VectorDBService:
     """
-    Service ChromaDB untuk menyimpan dan mencari pengetahuan FAQ Dea Trans Group.
+    Service ChromaDB untuk mengelola alur RAG:
+    1. Chunking & Overlap dokumen panjang
+    2. Embedding (Vektorisasi)
+    3. Penyimpanan & Vector Retrieval (Top-K Similarity Search)
     """
 
     def __init__(self):
@@ -66,14 +70,14 @@ class VectorDBService:
         self.collection = self.client.get_or_create_collection(
             name=settings.CHROMA_COLLECTION_NAME,
             embedding_function=self.embedding_fn,
-            metadata={"description": "FAQ dan Knowledge Base Dea Trans Group"}
+            metadata={"description": "FAQ dan Knowledge Base Dea Trans Group (RAG Chunks)"}
         )
         
         # Inisialisasi data bawaan jika koleksi masih kosong
         self._seed_default_faqs_if_needed()
 
     def _get_embedding_function(self) -> EmbeddingFunction:
-        """Memilih fungsi embedding terbaik."""
+        """Memilih fungsi embedding semantik terbaik."""
         if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY != "your_openai_api_key_here":
             try:
                 from chromadb.utils import embedding_functions
@@ -85,40 +89,91 @@ class VectorDBService:
             except Exception as e:
                 logger.warning(f"Gagal memuat OpenAI Embedding, beralih ke FastLocalEmbedding: {e}")
 
-        logger.info("Menggunakan FastLocalEmbeddingFunction (Ultra-fast & Offline).")
+        logger.info("Menggunakan FastLocalEmbeddingFunction (Ultra-fast & Semantic Vectorization).")
         return FastLocalEmbeddingFunction()
 
     def _seed_default_faqs_if_needed(self):
-        """Memasukkan knowledge base default jika koleksi belum memiliki dokumen."""
+        """
+        Memasukkan data FAQ default ke ChromaDB dengan alur Chunking & Embedding.
+        Setiap dokumen panjang dipecah menjadi chunks dengan irisan overlap.
+        """
         try:
             count = self.collection.count()
             if count == 0:
-                logger.info("Koleksi ChromaDB kosong. Memasukkan data FAQ bawaan Dea Trans Group...")
-                ids = [doc["id"] for doc in DEA_TRANS_FAQ_DOCUMENTS]
-                documents = [doc["content"] for doc in DEA_TRANS_FAQ_DOCUMENTS]
-                metadatas = [
-                    {
-                        "title": doc["title"],
-                        "category": doc["category"],
-                        "source": doc["source"]
-                    }
-                    for doc in DEA_TRANS_FAQ_DOCUMENTS
-                ]
+                logger.info("Koleksi ChromaDB kosong. Memproses Chunking & Embedding data default Dea Trans...")
+                all_chunks: List[TextChunk] = []
+
+                for doc in DEA_TRANS_FAQ_DOCUMENTS:
+                    chunks = text_chunker.chunk_document(
+                        doc_id=doc["id"],
+                        content=doc["content"],
+                        title=doc["title"],
+                        category=doc["category"],
+                        source=doc["source"]
+                    )
+                    all_chunks.extend(chunks)
+
+                ids = [f"{c.metadata['parent_id']}_c{c.chunk_index}" for c in all_chunks]
+                documents = [c.text for c in all_chunks]
+                metadatas = [c.to_dict() for c in all_chunks]
+
                 self.collection.add(
                     ids=ids,
                     documents=documents,
                     metadatas=metadatas
                 )
-                logger.info(f"Berhasil menambahkan {len(ids)} dokumen default ke ChromaDB.")
+                logger.info(
+                    f"Berhasil memotong {len(DEA_TRANS_FAQ_DOCUMENTS)} dokumen menjadi "
+                    f"{len(ids)} chunks dan menyimpannya ke ChromaDB."
+                )
             else:
-                logger.info(f"Koleksi ChromaDB sudah berisi {count} dokumen.")
+                logger.info(f"Koleksi ChromaDB sudah berisi {count} chunks dokumen.")
         except Exception as e:
             logger.error(f"Gagal melakukan seeding ChromaDB: {e}", exc_info=True)
 
+    def add_documents(self, docs: List[Dict[str, Any]]) -> Dict[str, int]:
+        """
+        Menambahkan dokumen baru dengan alur Chunking -> Embedding -> ChromaDB storage.
+        Mengembalikan statistik jumlah dokumen asal dan total potongan (chunks) yang dibuat.
+        """
+        all_chunks: List[TextChunk] = []
+
+        for doc in docs:
+            doc_id = doc.get("id") or str(uuid.uuid4())
+            chunks = text_chunker.chunk_document(
+                doc_id=doc_id,
+                content=doc["content"],
+                title=doc.get("title", "Dokumen Baru"),
+                category=doc.get("category", "Umum"),
+                source=doc.get("source", "https://deatransgroup.com/")
+            )
+            all_chunks.extend(chunks)
+
+        if not all_chunks:
+            return {"inserted_documents": 0, "inserted_chunks": 0}
+
+        ids = [f"{c.metadata['parent_id']}_c{c.chunk_index}_{uuid.uuid4().hex[:4]}" for c in all_chunks]
+        contents = [c.text for c in all_chunks]
+        metadatas = [c.to_dict() for c in all_chunks]
+
+        self.collection.add(
+            ids=ids,
+            documents=contents,
+            metadatas=metadatas
+        )
+
+        logger.info(f"RAG Chunking: Berhasil menyimpan {len(docs)} dokumen ({len(ids)} chunks) ke ChromaDB.")
+        return {
+            "inserted_documents": len(docs),
+            "inserted_chunks": len(ids)
+        }
+
     def search(self, query: str, top_k: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        Mencari dokumen yang paling relevan dengan pertanyaan pengguna.
-        Mengembalikan list dokumen beserta metadata dan distance.
+        Vector Retrieval (Pencarian Vektor):
+        1. Query diubah menjadi vektor embedding semantik.
+        2. ChromaDB mencari chunks dengan jarak vektor terdekat (Cosine Distance).
+        3. Mengambil Top-K chunks paling relevan.
         """
         k = top_k or settings.RETRIEVAL_TOP_K
         total = self.collection.count()
@@ -139,16 +194,22 @@ class VectorDBService:
                 ids = results["ids"][0] if results.get("ids") else [""] * len(docs)
                 distances = results["distances"][0] if results.get("distances") else [1.0] * len(docs)
 
-                for doc_id, text, meta, dist in zip(ids, docs, metas, distances):
+                for chunk_id, text, meta, dist in zip(ids, docs, metas, distances):
+                    distance_val = float(dist)
+                    # Konversi distance ke estimasi kemiripan Cosine Similarity (0 s/d 1)
+                    relevance_score = max(0.0, min(1.0, 1.0 - (distance_val / 2.0)))
+
                     formatted_results.append({
-                        "id": doc_id,
+                        "id": chunk_id,
                         "content": text,
                         "title": meta.get("title", "FAQ Dea Trans"),
                         "category": meta.get("category", "Umum"),
                         "source": meta.get("source", "https://deatransgroup.com/"),
-                        "distance": float(dist),
-                        # Konversi distance ke similarity skor aproksimasi (0-1)
-                        "relevance_score": max(0.0, min(1.0, 1.0 - (float(dist) / 2.0)))
+                        "parent_id": meta.get("parent_id", ""),
+                        "chunk_index": meta.get("chunk_index", 0),
+                        "total_chunks": meta.get("total_chunks", 1),
+                        "distance": distance_val,
+                        "relevance_score": relevance_score
                     })
 
             return formatted_results
@@ -158,9 +219,9 @@ class VectorDBService:
 
     def is_knowledge_sufficient(self, search_results: List[Dict[str, Any]]) -> bool:
         """
-        Evaluasi apakah dokumen lokal di ChromaDB memadai:
-        1. Harus ada setidaknya 1 hasil dokumen.
-        2. Dokumen terbaik harus memiliki distance <= threshold (artinya relevansi cukup tinggi).
+        Evaluasi apakah chunks hasil retrieval memadai:
+        - Harus ada setidaknya 1 chunk yang ditemukan.
+        - Chunk terbaik memiliki distance <= threshold (skor kemiripan cukup tinggi).
         """
         if not search_results:
             return False
@@ -168,33 +229,12 @@ class VectorDBService:
         best_result = search_results[0]
         best_distance = best_result.get("distance", 999.0)
         
-        # Jarak lebih kecil berarti kemiripan lebih tinggi
         is_sufficient = best_distance <= settings.RETRIEVAL_DISTANCE_THRESHOLD
         logger.info(
-            f"Evaluasi ChromaDB: best_distance={best_distance:.4f}, "
+            f"Evaluasi RAG: best_distance={best_distance:.4f}, "
             f"threshold={settings.RETRIEVAL_DISTANCE_THRESHOLD}, sufficient={is_sufficient}"
         )
         return is_sufficient
-
-    def add_documents(self, docs: List[Dict[str, Any]]) -> int:
-        """Menambahkan dokumen kustom ke ChromaDB."""
-        ids = [doc.get("id") or str(uuid.uuid4()) for doc in docs]
-        contents = [doc["content"] for doc in docs]
-        metadatas = [
-            {
-                "title": doc.get("title", "Dokumen Baru"),
-                "category": doc.get("category", "Umum"),
-                "source": doc.get("source", "https://deatransgroup.com/")
-            }
-            for doc in docs
-        ]
-
-        self.collection.add(
-            ids=ids,
-            documents=contents,
-            metadatas=metadatas
-        )
-        return len(ids)
 
     def count(self) -> int:
         return self.collection.count()

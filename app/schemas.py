@@ -39,6 +39,7 @@ class IngestDocumentsRequest(BaseModel):
 class IngestDocumentsResponse(BaseModel):
     status: str
     inserted_count: int
+    inserted_chunks: Optional[int] = Field(default=None, description="Total potongan (chunks) yang dihasilkan dari pemotongan teks")
     message: str
 
 
